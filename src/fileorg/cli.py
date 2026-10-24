@@ -1,4 +1,4 @@
-"""Command line interface: ``fileorg scan <folder> -o records.jsonl``."""
+"""Command line interface: ``fileorg scan``, ``fileorg split``."""
 from __future__ import annotations
 
 import argparse
@@ -6,8 +6,11 @@ import sys
 from collections import Counter
 from typing import Optional, Sequence
 
+from fileorg.evaluation.split import (
+    DEFAULT_FOLDS, DEFAULT_SEED, DEFAULT_TEST_SIZE, load_groups, make_split, write_split,
+)
 from fileorg.extraction import DEFAULT_MAX_CHARS
-from fileorg.pipeline import process_directory, write_jsonl
+from fileorg.pipeline import process_directory, read_jsonl, write_jsonl
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
@@ -36,6 +39,20 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_split(args: argparse.Namespace) -> int:
+    records = read_jsonl(args.records)
+    groups = load_groups(args.groups) if args.groups else None
+    split = make_split(records, test_size=args.test_size, folds=args.folds, seed=args.seed, groups=groups)
+    write_split(split, args.out)
+
+    print(f"Wrote {args.out}: {len(split.dev)} development ({split.n_folds} folds), {len(split.test)} test")
+    print("Dev by label: ", dict(sorted(Counter(r.label for r in split.dev).items())))
+    print("Test by label:", dict(sorted(Counter(r.label for r in split.test).items())))
+    if groups:
+        print(f"Grouped by template: {len(set(groups.values()))} groups")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fileorg", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -49,6 +66,16 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS, help="max characters of text per file")
     scan.add_argument("--max-pages", type=int, default=None, help="max PDF pages to read per file")
     scan.set_defaults(func=_cmd_scan)
+
+    split = sub.add_parser("split", help="create the stratified dev/test split and CV folds")
+    split.add_argument("records", help="labelled records JSONL from `fileorg scan --labelled`")
+    split.add_argument("-o", "--out", default="data/split.csv", help="split file to write (commit this one)")
+    split.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    split.add_argument("--test-size", type=float, default=DEFAULT_TEST_SIZE)
+    split.add_argument("--folds", type=int, default=DEFAULT_FOLDS)
+    split.add_argument("--groups", default=None,
+                       help="sources.csv; keeps files with the same template_id together")
+    split.set_defaults(func=_cmd_split)
     return parser
 
 
