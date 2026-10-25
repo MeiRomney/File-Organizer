@@ -1,5 +1,6 @@
 """Command line interface: ``fileorg scan``, ``fileorg split``."""
 from __future__ import annotations
+from pathlib import Path
 
 import argparse
 import sys
@@ -41,9 +42,16 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 def _cmd_split(args: argparse.Namespace) -> int:
     records = read_jsonl(args.records)
-    groups = load_groups(args.groups) if args.groups else None
+    if not records:
+        print("No records found. Put files in data/raw/<category>/ and run `fileorg scan` first.", file=sys.stderr)
+        return 1
+    groups = None
+    if args.groups:
+        if not Path(args.groups).is_file():
+            print(f"Groups file not found: {args.groups} (leave out --groups to split by file)", file=sys.stderr)
+            return 1
+        groups = load_groups(args.groups)
     split = make_split(records, test_size=args.test_size, folds=args.folds, seed=args.seed, groups=groups)
-    write_split(split, args.out)
 
     print(f"Wrote {args.out}: {len(split.dev)} development ({split.n_folds} folds), {len(split.test)} test")
     print("Dev by label: ", dict(sorted(Counter(r.label for r in split.dev).items())))

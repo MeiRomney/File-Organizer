@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = ["pypdf>=4.0", "python-docx>=1.1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "reportlab>=4"]
+dev = ["pytest>=8", "reportlab>=4", "faker>=24"]
 
 [project.scripts]
 fileorg = "fileorg.cli:main"
