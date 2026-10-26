@@ -1,14 +1,17 @@
-"""Command line interface: ``fileorg scan``, ``fileorg split``."""
+"""Command line interface: ``fileorg scan``, ``fileorg split``, ``fileorg evaluate``."""
 from __future__ import annotations
-from pathlib import Path
 
 import argparse
+import json
 import sys
 from collections import Counter
 from typing import Optional, Sequence
 
+from fileorg.classifiers import CLASSIFIER_NAMES, factory
+from fileorg.evaluation.metrics import format_confusion
+from fileorg.evaluation.runner import cross_validate, final_test
 from fileorg.evaluation.split import (
-    DEFAULT_FOLDS, DEFAULT_SEED, DEFAULT_TEST_SIZE, load_groups, make_split, write_split,
+    DEFAULT_FOLDS, DEFAULT_SEED, DEFAULT_TEST_SIZE, apply_split, load_groups, make_split, write_split,
 )
 from fileorg.extraction import DEFAULT_MAX_CHARS
 from fileorg.pipeline import process_directory, read_jsonl, write_jsonl
@@ -42,22 +45,58 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 def _cmd_split(args: argparse.Namespace) -> int:
     records = read_jsonl(args.records)
-    if not records:
-        print("No records found. Put files in data/raw/<category>/ and run `fileorg scan` first.", file=sys.stderr)
-        return 1
-    groups = None
-    if args.groups:
-        if not Path(args.groups).is_file():
-            print(f"Groups file not found: {args.groups} (leave out --groups to split by file)", file=sys.stderr)
-            return 1
-        groups = load_groups(args.groups)
+    groups = load_groups(args.groups) if args.groups else None
     split = make_split(records, test_size=args.test_size, folds=args.folds, seed=args.seed, groups=groups)
+    write_split(split, args.out)
 
     print(f"Wrote {args.out}: {len(split.dev)} development ({split.n_folds} folds), {len(split.test)} test")
     print("Dev by label: ", dict(sorted(Counter(r.label for r in split.dev).items())))
     print("Test by label:", dict(sorted(Counter(r.label for r in split.test).items())))
     if groups:
         print(f"Grouped by template: {len(set(groups.values()))} groups")
+    return 0
+
+
+def _cmd_evaluate(args: argparse.Namespace) -> int:
+    records = read_jsonl(args.records)
+    split = apply_split(records, args.split)
+    options = {}
+    if args.classifier == "rules":
+        options["features"] = [f.strip() for f in args.features.split(",") if f.strip()]
+        options["min_score"] = args.min_score
+        options["margin"] = args.margin
+    make = factory(args.classifier, **options)
+    description = f"{args.classifier} {options}" if options else args.classifier
+
+    if args.final:
+        print("=" * 70)
+        print("FINAL TEST EVALUATION - run this once, after all tuning is finished.")
+        print("=" * 70)
+        result = final_test(make, split)
+        report = result.report
+        print(f"{description}: trained on {len(split.dev)} dev files, tested on {len(split.test)} test files")
+        print(f"fit {result.fit_seconds:.2f}s, predict {result.predict_seconds:.2f}s")
+        errors = [(r, p) for r, p in zip(split.test, result.predictions) if r.label != p]
+    else:
+        cv = cross_validate(make, split)
+        report = cv.pooled
+        print(f"{description}: {split.n_folds}-fold cross-validation on {len(split.dev)} development files")
+        print(f"accuracy per fold: mean {cv.mean_accuracy:.3f}, std {cv.std_accuracy:.3f}; macro-F1 mean {cv.mean_macro_f1:.3f}")
+        errors = cv.errors()
+
+    print()
+    print(report.format())
+    print()
+    print("Confusion matrix (rows = true, columns = predicted):")
+    print(format_confusion(report))
+    if args.errors and errors:
+        print(f"\nFirst {min(args.errors, len(errors))} of {len(errors)} errors (true -> predicted):")
+        for rec, pred in errors[: args.errors]:
+            print(f"  {rec.rel_path}: {rec.label} -> {pred}")
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as fh:
+            json.dump({"classifier": description, "mode": "final" if args.final else "cv", **report.to_dict()}, fh, indent=2)
+        print(f"\nWrote {args.json}")
     return 0
 
 
@@ -84,6 +123,21 @@ def build_parser() -> argparse.ArgumentParser:
     split.add_argument("--groups", default=None,
                        help="sources.csv; keeps files with the same template_id together")
     split.set_defaults(func=_cmd_split)
+
+    ev = sub.add_parser("evaluate", help="cross-validate a classifier on the dev set (or run the final test)")
+    ev.add_argument("records", help="labelled records JSONL")
+    ev.add_argument("--split", default="data/split.csv", help="split file made by `fileorg split`")
+    ev.add_argument("--classifier", default="rules", choices=CLASSIFIER_NAMES)
+    ev.add_argument("--features", default="text,filename,metadata",
+                    help="rules only: comma-separated feature groups to use (text, filename, metadata)")
+    ev.add_argument("--min-score", type=float, default=4.0,
+                    help="rules only: best score below this means 'other' (lower it for metadata-only runs)")
+    ev.add_argument("--margin", type=float, default=0.0,
+                    help="rules only: required lead over the runner-up, otherwise 'other'")
+    ev.add_argument("--final", action="store_true", help="evaluate on the TEST set (do this once, at the very end)")
+    ev.add_argument("--errors", type=int, default=15, help="how many misclassified files to list")
+    ev.add_argument("--json", default=None, help="also write the report as JSON")
+    ev.set_defaults(func=_cmd_evaluate)
     return parser
 
 

@@ -23,6 +23,17 @@ class EvalResult:
 class CVResult:
     folds: list[EvalResult]
     pooled: Report  # all validation predictions combined
+    records: list[FileRecord]  # validation records, in the same order as ``predictions``
+    predictions: list[str]
+
+    def errors(self) -> list[tuple[FileRecord, str]]:
+        """(record, predicted label) for every misclassified validation file."""
+        return [(r, p) for r, p in zip(self.records, self.predictions) if r.label != p]
+
+    @property
+    def std_accuracy(self) -> float:
+        m = self.mean_accuracy
+        return (sum((f.report.accuracy - m) ** 2 for f in self.folds) / len(self.folds)) ** 0.5
 
     @property
     def mean_accuracy(self) -> float:
@@ -55,12 +66,14 @@ def cross_validate(
     results: list[EvalResult] = []
     y_true: list[str] = []
     y_pred: list[str] = []
+    seen: list[FileRecord] = []
     for train, val in split.cv_splits():
         result = evaluate(make_classifier(), train, val, labels)
         results.append(result)
         y_true += [r.label for r in val]
         y_pred += result.predictions
-    return CVResult(results, classification_report(y_true, y_pred, labels))
+        seen += list(val)
+    return CVResult(results, classification_report(y_true, y_pred, labels), seen, y_pred)
 
 
 def final_test(

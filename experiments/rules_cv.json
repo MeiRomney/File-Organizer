@@ -1,0 +1,76 @@
+{
+  "classifier": "rules {'features': ['text', 'filename', 'metadata'], 'min_score': 4.0, 'margin': 0.0}",
+  "mode": "cv",
+  "n": 319,
+  "accuracy": 1.0,
+  "macro": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 319
+  },
+  "weighted": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 319
+  },
+  "per_class": {
+    "cv_resume": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 80
+    },
+    "invoice": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 80
+    },
+    "letter": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 79
+    },
+    "receipt": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 80
+    }
+  },
+  "labels": [
+    "cv_resume",
+    "invoice",
+    "letter",
+    "receipt"
+  ],
+  "confusion": [
+    [
+      80,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      80,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      79,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      80
+    ]
+  ]
+}
