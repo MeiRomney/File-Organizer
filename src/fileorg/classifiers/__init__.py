@@ -5,7 +5,7 @@ from typing import Callable
 
 from fileorg.classifiers.base import Classifier
 
-CLASSIFIER_NAMES = ["rules"]  # ml and embeddings are added here later
+CLASSIFIER_NAMES = ["rules", "ml"]  # embeddings are added here later
 
 
 def get_classifier(name: str, **options) -> Classifier:
@@ -14,6 +14,10 @@ def get_classifier(name: str, **options) -> Classifier:
         from fileorg.classifiers.rule_based import RuleBasedClassifier
 
         return RuleBasedClassifier(**options)
+    if name == "ml":
+        from fileorg.classifiers.ml import MLClassifier
+
+        return MLClassifier(**options)
     raise ValueError(f"unknown classifier '{name}', choose from {CLASSIFIER_NAMES}")
 
 

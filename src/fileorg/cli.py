@@ -1,4 +1,4 @@
-"""Command line interface: ``fileorg scan``, ``fileorg split``, ``fileorg evaluate``."""
+"""Command line interface: ``fileorg scan | split | evaluate | tune``."""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +10,7 @@ from typing import Optional, Sequence
 from fileorg.classifiers import CLASSIFIER_NAMES, factory
 from fileorg.evaluation.metrics import format_confusion
 from fileorg.evaluation.runner import cross_validate, final_test
+from fileorg.evaluation.tuning import grid_search
 from fileorg.evaluation.split import (
     DEFAULT_FOLDS, DEFAULT_SEED, DEFAULT_TEST_SIZE, apply_split, load_groups, make_split, write_split,
 )
@@ -57,14 +58,66 @@ def _cmd_split(args: argparse.Namespace) -> int:
     return 0
 
 
+def _classifier_options(args: argparse.Namespace) -> dict:
+    """Constructor options for the chosen classifier, taken from the command line."""
+    options: dict = {}
+    if args.classifier in ("rules", "ml"):
+        options["features"] = [f.strip() for f in args.features.split(",") if f.strip()]
+    if args.classifier == "rules":
+        options["min_score"] = args.min_score
+        options["margin"] = args.margin
+    if args.classifier == "ml":
+        options.update(model=args.model, C=args.C, ngram_max=args.ngram_max)
+    return options
+
+
+def _parse_grid(text: str) -> dict:
+    """'C=0.1,1,10;model=logreg,svm' -> {'C': [0.1, 1, 10], 'model': ['logreg', 'svm']}"""
+    def convert(value: str):
+        for cast in (int, float):
+            try:
+                return cast(value)
+            except ValueError:
+                pass
+        return value
+
+    grid = {}
+    for part in filter(None, (p.strip() for p in text.split(";"))):
+        key, _, values = part.partition("=")
+        grid[key.strip()] = [convert(v.strip()) for v in values.split(",") if v.strip()]
+    return grid
+
+
+DEFAULT_GRIDS = {
+    "rules": "min_score=2,4,6;margin=0,1,2",
+    "ml": "model=logreg,svm;C=0.1,1,10;ngram_max=1,2",
+}
+
+
+def _cmd_tune(args: argparse.Namespace) -> int:
+    records = read_jsonl(args.records)
+    split = apply_split(records, args.split)
+    fixed = _classifier_options(args)
+    grid = _parse_grid(args.grid or DEFAULT_GRIDS[args.classifier])
+    fixed = {k: v for k, v in fixed.items() if k not in grid}  # the grid wins over the fixed options
+    results = grid_search(lambda **p: factory(args.classifier, **fixed, **p)(), grid, split)
+
+    print(f"{args.classifier}: {len(results)} settings, {split.n_folds}-fold CV on {len(split.dev)} development files "
+          f"(test set untouched)")
+    print(f"{'macro-F1':>9}  {'accuracy':>9}  {'std':>6}  {'fit s':>6}  parameters")
+    for r in results:
+        print(f"{r.mean_macro_f1:9.3f}  {r.mean_accuracy:9.3f}  {r.std_accuracy:6.3f}  {r.fit_seconds:6.2f}  {r.params}")
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as fh:
+            json.dump([vars(r) for r in results], fh, indent=2)
+        print(f"\nWrote {args.json}")
+    return 0
+
+
 def _cmd_evaluate(args: argparse.Namespace) -> int:
     records = read_jsonl(args.records)
     split = apply_split(records, args.split)
-    options = {}
-    if args.classifier == "rules":
-        options["features"] = [f.strip() for f in args.features.split(",") if f.strip()]
-        options["min_score"] = args.min_score
-        options["margin"] = args.margin
+    options = _classifier_options(args)
     make = factory(args.classifier, **options)
     description = f"{args.classifier} {options}" if options else args.classifier
 
@@ -124,16 +177,29 @@ def build_parser() -> argparse.ArgumentParser:
                        help="sources.csv; keeps files with the same template_id together")
     split.set_defaults(func=_cmd_split)
 
+    def add_classifier_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("records", help="labelled records JSONL")
+        p.add_argument("--split", default="data/split.csv", help="split file made by `fileorg split`")
+        p.add_argument("--classifier", default="rules", choices=CLASSIFIER_NAMES)
+        p.add_argument("--features", default="text,filename,metadata",
+                       help="rules/ml: comma-separated feature groups (text, filename, metadata)")
+        p.add_argument("--min-score", type=float, default=4.0,
+                       help="rules: best score below this means 'other' (lower it for metadata-only runs)")
+        p.add_argument("--margin", type=float, default=0.0,
+                       help="rules: required lead over the runner-up, otherwise 'other'")
+        p.add_argument("--model", default="logreg", choices=["logreg", "svm"], help="ml: linear model")
+        p.add_argument("--C", type=float, default=1.0, help="ml: regularisation strength (higher = weaker)")
+        p.add_argument("--ngram-max", type=int, default=2, help="ml: longest word n-gram (1 = single words)")
+
+    tune = sub.add_parser("tune", help="grid search on the development folds (never touches the test set)")
+    add_classifier_args(tune)
+    tune.add_argument("--grid", default=None,
+                      help="e.g. 'C=0.1,1,10;model=logreg,svm' (a sensible default exists per classifier)")
+    tune.add_argument("--json", default=None, help="also write the results as JSON")
+    tune.set_defaults(func=_cmd_tune)
+
     ev = sub.add_parser("evaluate", help="cross-validate a classifier on the dev set (or run the final test)")
-    ev.add_argument("records", help="labelled records JSONL")
-    ev.add_argument("--split", default="data/split.csv", help="split file made by `fileorg split`")
-    ev.add_argument("--classifier", default="rules", choices=CLASSIFIER_NAMES)
-    ev.add_argument("--features", default="text,filename,metadata",
-                    help="rules only: comma-separated feature groups to use (text, filename, metadata)")
-    ev.add_argument("--min-score", type=float, default=4.0,
-                    help="rules only: best score below this means 'other' (lower it for metadata-only runs)")
-    ev.add_argument("--margin", type=float, default=0.0,
-                    help="rules only: required lead over the runner-up, otherwise 'other'")
+    add_classifier_args(ev)
     ev.add_argument("--final", action="store_true", help="evaluate on the TEST set (do this once, at the very end)")
     ev.add_argument("--errors", type=int, default=15, help="how many misclassified files to list")
     ev.add_argument("--json", default=None, help="also write the report as JSON")
