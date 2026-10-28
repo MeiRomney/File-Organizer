@@ -10,7 +10,8 @@ requires-python = ">=3.10"
 dependencies = ["pypdf>=4.0", "python-docx>=1.1", "scikit-learn>=1.4"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "reportlab>=4", "faker>=24"]
+dev = ["pytest>=8", "reportlab>=4", "faker>=24", "psutil>=5"]
+embeddings = ["sentence-transformers>=3"]
 
 [project.scripts]
 fileorg = "fileorg.cli:main"
