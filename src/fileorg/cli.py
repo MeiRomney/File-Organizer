@@ -18,7 +18,7 @@ from fileorg.evaluation.split import (
 from fileorg.evaluation.timing import DEFAULT_SIZES, format_benchmark, run_benchmark
 from fileorg.evaluation.tuning import grid_search
 from fileorg.extraction import DEFAULT_MAX_CHARS
-from fileorg.organizer import MoveLog, build_plan, execute_plan, format_plan, predict_with_confidence, undo_batch
+# from fileorg.organizer import MoveLog, build_plan, execute_plan, format_plan, predict_with_confidence, undo_batch
 from fileorg.pipeline import process_directory, read_jsonl, write_jsonl
 
 
@@ -310,6 +310,8 @@ def _print_problems(problems, limit: int = 10) -> None:
 
 
 def _cmd_organize(args: argparse.Namespace) -> int:
+    from fileorg.organizer import MoveLog, build_plan, execute_plan, format_plan, predict_with_confidence
+
     root = Path(args.folder).resolve()
     if not root.is_dir():
         print(f"Error: not a folder: {root}", file=sys.stderr)
@@ -354,6 +356,8 @@ def _cmd_organize(args: argparse.Namespace) -> int:
 
 
 def _cmd_undo(args: argparse.Namespace) -> int:
+    from fileorg.organizer import MoveLog, undo_batch
+
     root = Path(args.folder).resolve()
     db = _log_path(args, root)
     if not db.exists():
@@ -381,6 +385,8 @@ def _cmd_undo(args: argparse.Namespace) -> int:
 
 
 def _cmd_history(args: argparse.Namespace) -> int:
+    from fileorg.organizer import MoveLog
+
     root = Path(args.folder).resolve()
     db = _log_path(args, root)
     if not db.exists():
