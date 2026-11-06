@@ -29,7 +29,7 @@ def candidates(sets, start, end, per_set, ua):
                   "set": s, "from": start, "until": end}
         got = 0
         while params and got < per_set:
-            xml = http_get(f"{OAI_URL}?{urlencode(params)}", ua, pause=5)
+            xml = http_get(f"{OAI_URL}?{urlencode(params)}", ua, pause=5, timeout=240, retries=5)
             root = ET.fromstring(xml)
             for rec in root.iter(OAI + "record"):
                 meta = rec.find(f"{OAI}metadata/{AX}arXiv")
@@ -53,7 +53,7 @@ def main() -> None:
     ap.add_argument("--contact", required=True, help="your e-mail, sent in the User-Agent")
     ap.add_argument("--sets", default="cs,math,q-bio,stat,econ", help="arXiv sets, comma separated")
     ap.add_argument("--from", dest="start", default="2024-01-01")
-    ap.add_argument("--until", default="2024-01-31")
+    ap.add_argument("--until", default="2024-01-07")
     ap.add_argument("--formats", default=DEFAULT_FORMATS,
                     help="format weights; non-pdf = text extracted from the PDF")
     ap.add_argument("--seed", type=int, default=42)
@@ -82,11 +82,15 @@ def main() -> None:
         if fmt == "pdf":
             ok = store.save("academic_paper", f"{stem}.pdf", pdf, origin, lic)
         else:
-            text = pdf_to_text(pdf)
-            if len(text) < 3000:
-                Store.exclude(origin, "too little extractable text")
+            try:
+                text = pdf_to_text(pdf)
+                if len(text) < 3000:
+                    Store.exclude(origin, "too little extractable text")
+                    continue
+                ok = store.save_text("academic_paper", stem, text, fmt, origin + " (text converted)", lic)
+            except Exception as exc:  # noqa: BLE001
+                Store.exclude(origin, f"conversion failed: {type(exc).__name__}: {exc}")
                 continue
-            ok = store.save_text("academic_paper", stem, text, fmt, origin + " (text converted)", lic)
         if ok:
             saved += 1
             print(f"[{saved}/{args.n}] {ok.name}")

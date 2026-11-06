@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import date
 from pathlib import Path
+import re
 
 ROOT = Path(os.environ.get("FILEORG_ROOT") or Path(__file__).resolve().parents[1])
 RAW = ROOT / "data" / "raw"
@@ -30,7 +31,10 @@ EXCLUDED = ROOT / "data" / "excluded.csv"
 CATEGORIES = ("invoice", "receipt", "contract", "academic_paper",
               "cv_resume", "letter", "report", "other")
 DEFAULT_FORMATS = "pdf:0.4,docx:0.3,txt:0.3"
+_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
+def clean_text(text: str) -> str:
+    return _ILLEGAL.sub("", text)
 
 # ------------------------------------------------------------------ network
 def http_get(url: str, user_agent: str, *, retries: int = 4,
@@ -106,6 +110,7 @@ def render_pdf(text: str) -> bytes:
 
 
 def render(text: str, fmt: str) -> bytes:
+    text = clean_text
     if fmt == "txt":
         return text.encode("utf-8")
     if fmt == "docx":
