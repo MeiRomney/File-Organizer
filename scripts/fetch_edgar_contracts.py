@@ -117,9 +117,13 @@ def main() -> None:
                     Store.exclude(url, "amendment, not a full contract")
                 else:
                     stem = f"{cik}_{adsh.replace('-', '')}_{fname.rsplit('.', 1)[0]}"
-                    ok = store.save_text("contract", stem, text[:150_000],
-                                         pick_format(rng, args.formats), url,
-                                         "SEC EDGAR public filing")
+                    try:
+                        ok = store.save_text("contract", stem, text[:150_000],
+                                             pick_format(rng, args.formats), url,
+                                             "SEC EDGAR public filing")
+                    except Exception as exc:  # noqa: BLE001
+                        Store.exclude(url, f"conversion failed: {type(exc).__name__}: {exc}")
+                        continue
                     if ok:
                         saved += 1
                         got += 1

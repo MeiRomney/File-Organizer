@@ -110,7 +110,7 @@ def render_pdf(text: str) -> bytes:
 
 
 def render(text: str, fmt: str) -> bytes:
-    text = clean_text
+    text = clean_text(text)
     if fmt == "txt":
         return text.encode("utf-8")
     if fmt == "docx":
