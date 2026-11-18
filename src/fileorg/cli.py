@@ -404,6 +404,11 @@ def _cmd_history(args: argparse.Namespace) -> int:
             print(f"{b.id:5d}  {b.created:<25}  {b.classifier:<11}  {b.done:5d}  {b.failed:6d}  {b.skipped:7d}  {status}")
     return 0
 
+def _cmd_gui(args: argparse.Namespace) -> int:
+    from fileorg.desktop.app import main as run_gui
+
+    return run_gui(args.folder)
+
 
 # ---------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
@@ -522,6 +527,10 @@ def build_parser() -> argparse.ArgumentParser:
     und.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     und.add_argument("--log", default=None)
     und.set_defaults(func=_cmd_undo)
+
+    gui = sub.add_parser("gui", help="open the desktop interface")
+    gui.add_argument("folder", nargs="?", default=None, help="folder to pre-fill")
+    gui.set_defaults(func=_cmd_gui)
 
     hist = sub.add_parser("history", help="list organize runs, or the moves of one run")
     hist.add_argument("folder", help="the folder that was organized")

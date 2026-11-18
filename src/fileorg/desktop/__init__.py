@@ -1,0 +1,1 @@
+"""Desktop interface: ``fileorg gui``. Logic in ``session.py``, Tkinter window in ``app.py``."""
